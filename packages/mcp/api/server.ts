@@ -35,7 +35,9 @@ const getPromptTemplate = () => {
   //   console.log(`Using fallback prompt: ${fallback}`);
   //   return fallback;
   // }
-  return `You are an expert software engineer helping developers integrate with the Tesser FX Quote & Payment API. Generate clean, production-ready code for the {{ENDPOINT}} endpoint using the official API specification.
+  return `You are an expert software engineer helping developers integrate with the Tesser FX Quote & Payment API. Generate clean, production-ready code for the {{ENDPOINT}} endpoint ONLY using the official API specification.
+
+IMPORTANT: Generate code ONLY for the {{ENDPOINT}} endpoint. Do not generate code for any other endpoints, health checks, or demo functionality.
 
 TESSER FX API SPECIFICATION:
 - Base URL: https://api.tesser.com/v1
@@ -43,27 +45,28 @@ TESSER FX API SPECIFICATION:
 - Content-Type: application/json
 - API follows bank-grade patterns with event envelopes, idempotency keys, and predictive rate-limit headers
 
-OPENAPI SPECIFICATION DETAILS:
+TARGET ENDPOINT SPECIFICATION:
 {{OPENAPI_SPEC}}
 
 ENDPOINT SPECIFIC INFORMATION:
 {{ENDPOINT_SPECIFIC_INFO}}
 
 REQUIREMENTS:
-1. Generate code in {{LANGUAGE}} that strictly follows the OpenAPI specification above
-2. Include all required and optional fields as defined in the spec
-3. Implement proper type definitions matching the OpenAPI schemas exactly
-4. Handle all documented HTTP response codes (200/201, 400, 401, 409, 422, 429)
+1. Generate code in {{LANGUAGE}} that strictly follows the OpenAPI specification for {{ENDPOINT}} ONLY
+2. Include all required and optional fields as defined in the spec for {{ENDPOINT}}
+3. Implement proper type definitions matching the OpenAPI schemas for {{ENDPOINT}} exactly
+4. Handle all documented HTTP response codes for {{ENDPOINT}} (200/201, 400, 401, 409, 422, 429)
 5. Include proper error handling with the Error schema structure
-6. Support the EventEnvelope response format
-7. Implement Bearer token authentication
-8. Support optional Idempotency-Key header (max 255 bytes)
-9. Validate input according to the schema constraints (e.g., Amount pattern)
-10. Include example usage demonstrating the two-call workflow (quote → payment)
-11. Add helpful comments explaining the integration points
+6. Support the EventEnvelope response format for {{ENDPOINT}}
+7. Implement Bearer token authentication for {{ENDPOINT}}
+8. Support optional Idempotency-Key header (max 255 bytes) for {{ENDPOINT}}
+9. Validate input according to the schema constraints for {{ENDPOINT}} (e.g., Amount pattern)
+10. Include example usage demonstrating how to call {{ENDPOINT}}
+11. Add helpful comments explaining the {{ENDPOINT}} integration points
 12. Use modern, idiomatic {{LANGUAGE}} patterns and best practices
+13. DO NOT generate any health check, demo, or other endpoint code - ONLY {{ENDPOINT}}
 
-IMPORTANT SCHEMA DETAILS:
+IMPORTANT SCHEMA DETAILS FOR {{ENDPOINT}}:
 - Amount fields must match pattern: ^[0-9]+(\.[0-9]{1,18})?$
 - QuoteRequest requires either from_amount OR to_amount (not both)
 - Responses are wrapped in EventEnvelope with type field (quote.created, payment.created, etc.)
@@ -72,10 +75,10 @@ IMPORTANT SCHEMA DETAILS:
 
 RESPONSE FORMAT:
 '''{{LANGUAGE_EXTENSION}}
-// Generated code here following the exact OpenAPI specification
+// Generated code here following the exact OpenAPI specification for {{ENDPOINT}} only
 '''
 
-Generate production-ready code that developers can immediately use to integrate with the Tesser FX API.
+Generate production-ready code that developers can immediately use to integrate with the {{ENDPOINT}} endpoint of the Tesser FX API.
 `
 };
 
@@ -610,15 +613,23 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
   // Get specific endpoint details from OpenAPI spec
   const endpointDetails = getEndpointDetails(openApiSpec, endpoint);
 
-  // Format the OpenAPI spec for inclusion in prompt
+  // Get the specific path data for this endpoint
+  const endpointPath = openApiSpec.paths?.[endpoint as keyof typeof openApiSpec.paths];
+
+  if (!endpointPath) {
+    throw new Error(`Endpoint ${endpoint} not found in OpenAPI specification`);
+  }
+
+  // Create a minimal spec containing only what's needed for this endpoint
   const relevantSpec = {
     info: openApiSpec.info,
     servers: openApiSpec.servers,
     security: openApiSpec.security,
     paths: {
-      [endpoint]: openApiSpec.paths?.[endpoint as keyof typeof openApiSpec.paths]
+      [endpoint]: endpointPath
     },
     components: {
+      // Only include schemas that are actually referenced by this endpoint
       schemas: openApiSpec.components?.schemas,
       parameters: openApiSpec.components?.parameters,
       responses: openApiSpec.components?.responses,
