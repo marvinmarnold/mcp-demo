@@ -22,21 +22,557 @@ type SupportedLanguage = keyof typeof LANGUAGE_CONFIG;
 
 // Load the prompt template and OpenAPI spec
 const getPromptTemplate = () => {
-  try {
-    return readFileSync(join(__dirname, "prompt.txt"), "utf-8");
-  } catch (error) {
-    console.error("Failed to load prompt template:", error);
-    return "Generate code for the {{ENDPOINT}} endpoint in {{LANGUAGE}}.";
-  }
+  // try {
+  //   const templatePath = join(__dirname, "prompt.txt");
+  //   console.log(`Attempting to load prompt template from: ${templatePath}`);
+  //   const content = readFileSync(templatePath, "utf-8");
+  //   console.log(`Prompt template loaded successfully. Length: ${content.length} chars`);
+  //   console.log(`First 200 chars of prompt: ${content.substring(0, 200)}...`);
+  //   return content;
+  // } catch (error) {
+  //   console.error("Failed to load prompt template:", error);
+  //   const fallback = "Generate code for the {{ENDPOINT}} endpoint in {{LANGUAGE}}.";
+  //   console.log(`Using fallback prompt: ${fallback}`);
+  //   return fallback;
+  // }
+  return `You are an expert software engineer helping developers integrate with the Tesser FX Quote & Payment API. Generate clean, production-ready code for the {{ENDPOINT}} endpoint using the official API specification.
+
+TESSER FX API SPECIFICATION:
+- Base URL: https://api.tesser.com/v1
+- Authentication: Bearer token in Authorization header
+- Content-Type: application/json
+- API follows bank-grade patterns with event envelopes, idempotency keys, and predictive rate-limit headers
+
+OPENAPI SPECIFICATION DETAILS:
+{{OPENAPI_SPEC}}
+
+ENDPOINT SPECIFIC INFORMATION:
+{{ENDPOINT_SPECIFIC_INFO}}
+
+REQUIREMENTS:
+1. Generate code in {{LANGUAGE}} that strictly follows the OpenAPI specification above
+2. Include all required and optional fields as defined in the spec
+3. Implement proper type definitions matching the OpenAPI schemas exactly
+4. Handle all documented HTTP response codes (200/201, 400, 401, 409, 422, 429)
+5. Include proper error handling with the Error schema structure
+6. Support the EventEnvelope response format
+7. Implement Bearer token authentication
+8. Support optional Idempotency-Key header (max 255 bytes)
+9. Validate input according to the schema constraints (e.g., Amount pattern)
+10. Include example usage demonstrating the two-call workflow (quote → payment)
+11. Add helpful comments explaining the integration points
+12. Use modern, idiomatic {{LANGUAGE}} patterns and best practices
+
+IMPORTANT SCHEMA DETAILS:
+- Amount fields must match pattern: ^[0-9]+(\.[0-9]{1,18})?$
+- QuoteRequest requires either from_amount OR to_amount (not both)
+- Responses are wrapped in EventEnvelope with type field (quote.created, payment.created, etc.)
+- Unix timestamps are used for time fields
+- Quote valid_until determines expiration time
+
+RESPONSE FORMAT:
+'''{{LANGUAGE_EXTENSION}}
+// Generated code here following the exact OpenAPI specification
+'''
+
+Generate production-ready code that developers can immediately use to integrate with the Tesser FX API.
+`
 };
 
 const getOpenAPISpec = () => {
-  try {
-    const specContent = readFileSync(join(__dirname, "openapi.json"), "utf-8");
-    return JSON.parse(specContent);
-  } catch (error) {
-    console.error("Failed to load OpenAPI spec:", error);
-    return {};
+  // try {
+  //   const specPath = join(__dirname, "openapi.json");
+  //   console.log(`Attempting to load OpenAPI spec from: ${specPath}`);
+  //   const specContent = readFileSync(specPath, "utf-8");
+  //   console.log(`OpenAPI spec loaded successfully. Length: ${specContent.length} chars`);
+  //   const parsed = JSON.parse(specContent);
+  //   console.log(`OpenAPI spec title: ${parsed.info?.title}`);
+  //   console.log(`Available paths: ${Object.keys(parsed.paths || {}).join(', ')}`);
+  //   return parsed;
+  // } catch (error) {
+  //   console.error("Failed to load OpenAPI spec:", error);
+  //   const fallback = {};
+  //   console.log(`Using empty fallback spec`);
+  //   return fallback;
+  // }
+  return {
+    "openapi": "3.1.0",
+    "info": {
+      "title": "Tesser FX Quote & Payment API",
+      "version": "1.0.0",
+      "description": "Two-call workflow: (1) obtain a locked FX quote, (2) submit a payment that consumes it.\nDesign follows bank-grade patterns: versioned base path, event envelope, idempotency keys, cursor-based pagination, and predictive rate-limit headers."
+    },
+    "servers": [
+      {
+        "url": "https://api.tesser.com/v1"
+      }
+    ],
+    "security": [
+      {
+        "BearerAuth": []
+      }
+    ],
+    "paths": {
+      "/quotes": {
+        "post": {
+          "summary": "Obtain a locked FX quote",
+          "description": "Exactly one of `from_amount` or `to_amount` is required.  A `quote_id` inside the response must be supplied to **POST /payments** within `valid_until`.",
+          "tags": [
+            "Quote"
+          ],
+          "operationId": "createQuote",
+          "parameters": [
+            {
+              "$ref": "#/components/parameters/IdempotencyKey"
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteRequest"
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "$ref": "#/components/responses/EventQuote"
+            },
+            "400": {
+              "$ref": "#/components/responses/Error"
+            },
+            "401": {
+              "$ref": "#/components/responses/AuthError"
+            },
+            "409": {
+              "$ref": "#/components/responses/Conflict"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimit"
+            }
+          }
+        }
+      },
+      "/payments": {
+        "post": {
+          "summary": "Submit a payment using a quote",
+          "tags": [
+            "Payment"
+          ],
+          "operationId": "submitPayment",
+          "parameters": [
+            {
+              "$ref": "#/components/parameters/IdempotencyKey"
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequest"
+                }
+              }
+            }
+          },
+          "responses": {
+            "202": {
+              "$ref": "#/components/responses/EventPayment"
+            },
+            "400": {
+              "$ref": "#/components/responses/Error"
+            },
+            "401": {
+              "$ref": "#/components/responses/AuthError"
+            },
+            "409": {
+              "$ref": "#/components/responses/Conflict"
+            },
+            "422": {
+              "$ref": "#/components/responses/Unprocessable"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimit"
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "securitySchemes": {
+        "BearerAuth": {
+          "type": "http",
+          "scheme": "bearer",
+          "bearerFormat": "API_KEY"
+        }
+      },
+      "parameters": {
+        "IdempotencyKey": {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "description": "A unique value (max 255 bytes) that makes the request idempotent for 24 h.",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "PageSize": {
+          "in": "query",
+          "name": "page_size",
+          "description": "Max records per page (default 50, max 200).",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "Cursor": {
+          "in": "query",
+          "name": "cursor",
+          "description": "Opaque pagination cursor returned by previous call.",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "schemas": {
+        "UnixTime": {
+          "type": "integer",
+          "example": 1719878400
+        },
+        "Amount": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
+          "example": "1000.00"
+        },
+        "QuoteRequest": {
+          "type": "object",
+          "required": [
+            "to_currency"
+          ],
+          "properties": {
+            "client_quote_id": {
+              "type": "string"
+            },
+            "from_currency": {
+              "type": "string",
+              "example": "USDC"
+            },
+            "to_currency": {
+              "type": "string",
+              "example": "EUR"
+            },
+            "from_amount": {
+              "$ref": "#/components/schemas/Amount"
+            },
+            "to_amount": {
+              "$ref": "#/components/schemas/Amount"
+            },
+            "quote_time": {
+              "$ref": "#/components/schemas/UnixTime"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "compliance": {
+              "type": "object"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "from_amount"
+              ]
+            },
+            {
+              "required": [
+                "to_amount"
+              ]
+            }
+          ]
+        },
+        "QuoteData": {
+          "type": "object",
+          "required": [
+            "id",
+            "valid_until",
+            "quotes"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Quote ID"
+            },
+            "client_quote_id": {
+              "type": "string"
+            },
+            "valid_until": {
+              "$ref": "#/components/schemas/UnixTime"
+            },
+            "quotes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "rate",
+                  "settlement_period_seconds"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "rate": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "settlement_period_seconds": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "PaymentRequest": {
+          "type": "object",
+          "required": [
+            "quote_id"
+          ],
+          "properties": {
+            "client_payment_id": {
+              "type": "string"
+            },
+            "quote_id": {
+              "type": "string"
+            }
+          }
+        },
+        "PaymentData": {
+          "type": "object",
+          "required": [
+            "id",
+            "change_at",
+            "change"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "client_payment_id": {
+              "type": "string"
+            },
+            "change_at": {
+              "$ref": "#/components/schemas/UnixTime"
+            },
+            "change": {
+              "type": "string",
+              "enum": [
+                "payment_created",
+                "payment_settled",
+                "payment_rejected"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        },
+        "EventEnvelope": {
+          "type": "object",
+          "required": [
+            "id",
+            "created_at",
+            "type",
+            "data"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "created_at": {
+              "$ref": "#/components/schemas/UnixTime"
+            },
+            "type": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object"
+            }
+          }
+        },
+        "Error": {
+          "type": "object",
+          "required": [
+            "status",
+            "error_code",
+            "message"
+          ],
+          "properties": {
+            "status": {
+              "type": "integer",
+              "example": 400
+            },
+            "error_code": {
+              "type": "string",
+              "example": "AmountTooSmall"
+            },
+            "message": {
+              "type": "string",
+              "example": "Amount is below minimum."
+            }
+          }
+        }
+      },
+      "responses": {
+        "EventQuote": {
+          "description": "Quote created",
+          "headers": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EventEnvelope"
+                  },
+                  {
+                    "properties": {
+                      "type": {
+                        "const": "quote.created"
+                      },
+                      "data": {
+                        "$ref": "#/components/schemas/QuoteData"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "EventPayment": {
+          "description": "Payment event (created / settled / rejected)",
+          "headers": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EventEnvelope"
+                  },
+                  {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "payment.created",
+                          "payment.settled",
+                          "payment.rejected"
+                        ]
+                      },
+                      "data": {
+                        "$ref": "#/components/schemas/PaymentData"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "Error": {
+          "description": "Validation or business error",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "AuthError": {
+          "description": "Authentication required / invalid",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "Conflict": {
+          "description": "Resource conflict (e.g., quote already used)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "Unprocessable": {
+          "description": "Semantic validation failed (e.g., BalanceInsufficient)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "RateLimit": {
+          "description": "Too many requests",
+          "headers": {
+            "$ref": "#/components/headers/RetryAfter"
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      },
+      "headers": {
+        "RateLimit": {
+          "X-RateLimit-Limit": {
+            "description": "Total request quota per time-window.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "description": "Remaining calls in the current window.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "RetryAfter": {
+          "Retry-After": {
+            "description": "Seconds until the client may retry.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
   }
 };
 
@@ -68,6 +604,9 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
   const config = LANGUAGE_CONFIG[language];
   const openApiSpec = getOpenAPISpec();
 
+  console.log(`Generating code for endpoint: ${endpoint}, language: ${language}`);
+  console.log(`Template placeholders found: ENDPOINT=${template.includes('{{ENDPOINT}}')}, LANGUAGE=${template.includes('{{LANGUAGE}}')}, OPENAPI_SPEC=${template.includes('{{OPENAPI_SPEC}}')}`)
+
   // Get specific endpoint details from OpenAPI spec
   const endpointDetails = getEndpointDetails(openApiSpec, endpoint);
 
@@ -77,7 +616,7 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
     servers: openApiSpec.servers,
     security: openApiSpec.security,
     paths: {
-      [endpoint]: openApiSpec.paths?.[endpoint]
+      [endpoint]: openApiSpec.paths?.[endpoint as keyof typeof openApiSpec.paths]
     },
     components: {
       schemas: openApiSpec.components?.schemas,
@@ -87,12 +626,17 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
     }
   };
 
+  console.log(`Relevant spec paths: ${Object.keys(relevantSpec.paths || {}).join(', ')}`);
+
   const prompt = template
     .replace(/\{\{ENDPOINT\}\}/g, endpoint)
     .replace(/\{\{LANGUAGE\}\}/g, config.name)
     .replace(/\{\{LANGUAGE_EXTENSION\}\}/g, config.extension)
     .replace(/\{\{OPENAPI_SPEC\}\}/g, JSON.stringify(relevantSpec, null, 2))
     .replace(/\{\{ENDPOINT_SPECIFIC_INFO\}\}/g, endpointInfo);
+
+  console.log(`Final prompt length: ${prompt.length} chars`);
+  console.log(`First 500 chars of final prompt: ${prompt.substring(0, 500)}...`);
 
   try {
     const response = await anthropic.messages.create({
@@ -116,7 +660,10 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
     }
 
     if (content.type === "text") {
-      return (content as any).text;
+      const generatedText = (content as any).text;
+      console.log(`Generated code length: ${generatedText.length} chars`);
+      console.log(`Generated code preview: ${generatedText.substring(0, 200)}...`);
+      return generatedText;
     }
 
     throw new Error("Unexpected response format from Claude");
