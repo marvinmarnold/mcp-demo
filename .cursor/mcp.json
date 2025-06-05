@@ -1,0 +1,7 @@
+{
+    "mcpServers": {
+        "tesser": {
+            "url": "https://tesser-mcp.vercel.app/sse"
+        }
+    }
+}
