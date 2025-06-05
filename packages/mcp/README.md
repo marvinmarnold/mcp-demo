@@ -23,6 +23,6 @@ Update `api/server.ts` with your tools, prompts, and resources following the [MC
 `script/test-client.mjs` contains a sample client to try invocations.
 
 ```sh
-node scripts/test-client.mjs https://mcp-on-vercel.vercel.app
+node scripts/test-client.mjs https://tesser-mcp.vercel.app
 ```
 

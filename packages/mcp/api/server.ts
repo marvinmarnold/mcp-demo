@@ -20,10 +20,9 @@ const LANGUAGE_CONFIG = {
 
 type SupportedLanguage = keyof typeof LANGUAGE_CONFIG;
 
-// Load the prompt template
+// Load the prompt template and OpenAPI spec
 const getPromptTemplate = () => {
   try {
-    // Use a direct relative path from the api directory
     return readFileSync(join(__dirname, "prompt.txt"), "utf-8");
   } catch (error) {
     console.error("Failed to load prompt template:", error);
@@ -31,14 +30,68 @@ const getPromptTemplate = () => {
   }
 };
 
+const getOpenAPISpec = () => {
+  try {
+    const specContent = readFileSync(join(__dirname, "openapi.json"), "utf-8");
+    return JSON.parse(specContent);
+  } catch (error) {
+    console.error("Failed to load OpenAPI spec:", error);
+    return {};
+  }
+};
+
+// Extract relevant OpenAPI details for an endpoint
+const getEndpointDetails = (spec: any, endpoint: string) => {
+  const path = spec.paths?.[endpoint];
+  if (!path) return "Endpoint not found in specification";
+
+  const method = path.post || path.get || path.put || path.delete;
+  if (!method) return "No supported HTTP method found for endpoint";
+
+  const requestSchema = method.requestBody?.content?.["application/json"]?.schema;
+  const responses = method.responses;
+  const parameters = method.parameters || [];
+
+  return {
+    summary: method.summary || "",
+    description: method.description || "",
+    operationId: method.operationId || "",
+    requestSchema,
+    responses,
+    parameters,
+    tags: method.tags || []
+  };
+};
+
 const generateCode = async (endpoint: string, language: SupportedLanguage, endpointInfo: string) => {
   const template = getPromptTemplate();
   const config = LANGUAGE_CONFIG[language];
+  const openApiSpec = getOpenAPISpec();
+
+  // Get specific endpoint details from OpenAPI spec
+  const endpointDetails = getEndpointDetails(openApiSpec, endpoint);
+
+  // Format the OpenAPI spec for inclusion in prompt
+  const relevantSpec = {
+    info: openApiSpec.info,
+    servers: openApiSpec.servers,
+    security: openApiSpec.security,
+    paths: {
+      [endpoint]: openApiSpec.paths?.[endpoint]
+    },
+    components: {
+      schemas: openApiSpec.components?.schemas,
+      parameters: openApiSpec.components?.parameters,
+      responses: openApiSpec.components?.responses,
+      securitySchemes: openApiSpec.components?.securitySchemes
+    }
+  };
 
   const prompt = template
     .replace(/\{\{ENDPOINT\}\}/g, endpoint)
     .replace(/\{\{LANGUAGE\}\}/g, config.name)
     .replace(/\{\{LANGUAGE_EXTENSION\}\}/g, config.extension)
+    .replace(/\{\{OPENAPI_SPEC\}\}/g, JSON.stringify(relevantSpec, null, 2))
     .replace(/\{\{ENDPOINT_SPECIFIC_INFO\}\}/g, endpointInfo);
 
   try {
@@ -53,7 +106,6 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
       ],
     });
 
-    // Properly handle the response content with type guards
     if (!response.content || response.content.length === 0) {
       throw new Error("No content in response from Claude");
     }
@@ -64,7 +116,7 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
     }
 
     if (content.type === "text") {
-      return (content as any).text; // Type assertion as fallback
+      return (content as any).text;
     }
 
     throw new Error("Unexpected response format from Claude");
@@ -89,30 +141,34 @@ const handler = createMcpHandler((server) => {
     },
     async ({ language, includeTypes }) => {
       const endpointInfo = `
-ENDPOINT DETAILS - /quotes:
-- Purpose: Obtain a locked FX quote for currency exchange
-- Required fields: to_currency
-- Either from_amount OR to_amount is required (not both)
-- Optional: client_quote_id, from_currency, quote_time, rules, compliance
-- Response: Returns a quote_id that must be used in payment submission
-- Quote has expiration time (valid_until) - typically short-lived
-- Example request: {"to_currency": "EUR", "from_amount": "1000.00", "from_currency": "USDC"}
-- Example response includes: quote_id, valid_until, exchange rates array
-- Headers: Optional Idempotency-Key for request deduplication
-- Authentication: Bearer token required
+TESSER FX /quotes ENDPOINT:
+This endpoint creates a locked FX quote that can be used for currency exchange.
 
-ERROR HANDLING:
-- 400: Validation errors (e.g., invalid amounts)
+KEY REQUIREMENTS FROM OPENAPI SPEC:
+- POST to /quotes
+- Required: to_currency field
+- Either from_amount OR to_amount is required (mutually exclusive)
+- Optional fields: client_quote_id, from_currency, quote_time, rules, compliance
+- Returns EventEnvelope with type "quote.created" and QuoteData in data field
+- Quote includes: id, valid_until (unix timestamp), quotes array with rates
+- Amount format must match: ^[0-9]+(\.[0-9]{1,18})?$
+
+AUTHENTICATION & HEADERS:
+- Bearer token authentication required
+- Optional Idempotency-Key header (max 255 bytes)
+- Content-Type: application/json
+
+ERROR RESPONSES:
+- 400: Validation errors (bad request format)
 - 401: Authentication failed
-- 409: Conflict (e.g., idempotency key reused)
-- 429: Rate limit exceeded
+- 409: Conflict (idempotency key reused)
+- 429: Rate limit exceeded (with Retry-After header)
 
-Key integration considerations:
-1. Handle quote expiration properly
-2. Store quote_id for payment submission
-3. Implement proper error handling for network issues
-4. Consider retry logic for transient failures
-${includeTypes ? "5. Include full type definitions for request/response objects" : ""}`;
+INTEGRATION NOTES:
+- Store the quote.id for subsequent payment submission
+- Monitor valid_until timestamp for quote expiration
+- Handle rate limiting with exponential backoff
+${includeTypes ? "- Include full TypeScript interfaces matching OpenAPI schemas" : ""}`;
 
       try {
         const generatedCode = await generateCode("/quotes", language, endpointInfo);
@@ -121,16 +177,16 @@ ${includeTypes ? "5. Include full type definitions for request/response objects"
           content: [
             {
               type: "text",
-              text: `# Tesser FX Quote Integration Code (${LANGUAGE_CONFIG[language].name})
+              text: `# Tesser FX Quote Integration (${LANGUAGE_CONFIG[language].name})
 
 ${generatedCode}
 
-## Usage Notes:
+## Integration Notes:
+- This code follows the official Tesser FX OpenAPI specification
 - Replace 'your-api-key-here' with your actual Tesser API key
-- The quote_id from the response must be used within the valid_until timeframe
-- Store the quote_id securely for the subsequent payment call
-- Implement proper error handling for production use
-- Consider implementing retry logic for 429 (rate limit) errors`,
+- The quote_id from the response must be used for payment submission
+- Quotes have limited validity - check valid_until timestamp
+- Implement proper retry logic for 429 (rate limit) responses`,
             },
           ],
         };
@@ -156,34 +212,39 @@ ${generatedCode}
     },
     async ({ language, includeTypes }) => {
       const endpointInfo = `
-ENDPOINT DETAILS - /payments:
-- Purpose: Submit a payment using a previously obtained quote
-- Required fields: quote_id (from previous /quotes call)
+TESSER FX /payments ENDPOINT:
+This endpoint submits a payment using a previously obtained quote.
+
+KEY REQUIREMENTS FROM OPENAPI SPEC:
+- POST to /payments
+- Required: quote_id (from previous /quotes response)
 - Optional: client_payment_id for tracking
-- Response: Returns payment status with change events
-- Payment goes through states: created → settled/rejected
-- Headers: Optional Idempotency-Key for request deduplication
-- Authentication: Bearer token required
+- Returns EventEnvelope with payment event type and PaymentData
+- Event types: payment.created, payment.settled, payment.rejected
+
+AUTHENTICATION & HEADERS:
+- Bearer token authentication required
+- Optional Idempotency-Key header (max 255 bytes)
+- Content-Type: application/json
+
+ERROR RESPONSES:
+- 400: Validation errors (malformed request)
+- 401: Authentication failed
+- 409: Conflict (quote already used, idempotency key reused)
+- 422: Business logic errors (insufficient balance, expired quote)
+- 429: Rate limit exceeded (with Retry-After header)
 
 PAYMENT LIFECYCLE:
-1. payment.created - Payment initiated
-2. payment.settled - Payment completed successfully
-3. payment.rejected - Payment failed (with reason)
+1. payment.created - Payment initiated successfully
+2. payment.settled - Payment completed successfully  
+3. payment.rejected - Payment failed (check reason field)
 
-ERROR HANDLING:
-- 400: Validation errors (e.g., malformed quote_id)
-- 401: Authentication failed
-- 409: Conflict (e.g., quote already used)
-- 422: Business logic errors (e.g., insufficient balance, expired quote)
-- 429: Rate limit exceeded
-
-Key integration considerations:
-1. Must use valid, unexpired quote_id from /quotes
-2. Handle asynchronous payment processing
-3. Monitor payment status changes
-4. Implement webhook handling for status updates (if available)
-5. Handle various rejection reasons gracefully
-${includeTypes ? "6. Include full type definitions for request/response objects" : ""}`;
+INTEGRATION NOTES:
+- Must use valid, unexpired quote_id from /quotes endpoint
+- Payment processing is asynchronous
+- Monitor change field for payment state transitions
+- Handle rejection reasons appropriately
+${includeTypes ? "- Include full TypeScript interfaces matching OpenAPI schemas" : ""}`;
 
       try {
         const generatedCode = await generateCode("/payments", language, endpointInfo);
@@ -192,17 +253,17 @@ ${includeTypes ? "6. Include full type definitions for request/response objects"
           content: [
             {
               type: "text",
-              text: `# Tesser FX Payment Integration Code (${LANGUAGE_CONFIG[language].name})
+              text: `# Tesser FX Payment Integration (${LANGUAGE_CONFIG[language].name})
 
 ${generatedCode}
 
-## Usage Notes:
+## Integration Notes:
+- This code follows the official Tesser FX OpenAPI specification
 - Replace 'your-api-key-here' with your actual Tesser API key
 - The quote_id must be from a recent, valid /quotes response
-- Payment processing is asynchronous - monitor the response status
+- Payment processing is asynchronous - monitor status changes
 - Implement proper error handling for all payment states
-- Consider implementing webhook handlers for status updates
-- Handle 422 errors gracefully (business logic failures)`,
+- Handle 422 errors (business logic failures) gracefully`,
             },
           ],
         };
