@@ -35,51 +35,48 @@ const getPromptTemplate = () => {
   //   console.log(`Using fallback prompt: ${fallback}`);
   //   return fallback;
   // }
-  return `You are an expert software engineer helping developers integrate with the Tesser FX Quote & Payment API. Generate clean, production-ready code for the {{ENDPOINT}} endpoint ONLY using the official API specification.
+  return `You are an expert software engineer generating a CLIENT LIBRARY for the {{ENDPOINT}} endpoint of the Tesser FX API.
 
-IMPORTANT: Generate code ONLY for the {{ENDPOINT}} endpoint. Do not generate code for any other endpoints, health checks, or demo functionality.
+CRITICAL INSTRUCTIONS:
+- Generate ONLY a client function or class for calling {{ENDPOINT}}
+- DO NOT generate any HTTP server code
+- DO NOT generate any demo endpoints (/demo, /, /quote, etc.)
+- DO NOT generate any server routes or handlers  
+- DO NOT generate any Bun.serve() or Express server code
+- DO NOT generate any console.log statements about "running on port"
+- The code must compile without any TypeScript errors
+- Focus ONLY on the client-side API call for {{ENDPOINT}}
 
-TESSER FX API SPECIFICATION:
+TESSER FX API DETAILS:
 - Base URL: https://api.tesser.com/v1
 - Authentication: Bearer token in Authorization header
 - Content-Type: application/json
-- API follows bank-grade patterns with event envelopes, idempotency keys, and predictive rate-limit headers
 
-TARGET ENDPOINT SPECIFICATION:
+TARGET ENDPOINT: {{ENDPOINT}}
 {{OPENAPI_SPEC}}
 
-ENDPOINT SPECIFIC INFORMATION:
+SPECIFIC REQUIREMENTS FOR {{ENDPOINT}}:
 {{ENDPOINT_SPECIFIC_INFO}}
 
-REQUIREMENTS:
-1. Generate code in {{LANGUAGE}} that strictly follows the OpenAPI specification for {{ENDPOINT}} ONLY
-2. Include all required and optional fields as defined in the spec for {{ENDPOINT}}
-3. Implement proper type definitions matching the OpenAPI schemas for {{ENDPOINT}} exactly
-4. Handle all documented HTTP response codes for {{ENDPOINT}} (200/201, 400, 401, 409, 422, 429)
-5. Include proper error handling with the Error schema structure
-6. Support the EventEnvelope response format for {{ENDPOINT}}
-7. Implement Bearer token authentication for {{ENDPOINT}}
-8. Support optional Idempotency-Key header (max 255 bytes) for {{ENDPOINT}}
-9. Validate input according to the schema constraints for {{ENDPOINT}} (e.g., Amount pattern)
-10. Include example usage demonstrating how to call {{ENDPOINT}}
-11. Add helpful comments explaining the {{ENDPOINT}} integration points
-12. Use modern, idiomatic {{LANGUAGE}} patterns and best practices
-13. DO NOT generate any health check, demo, or other endpoint code - ONLY {{ENDPOINT}}
+OUTPUT REQUIREMENTS:
+1. Generate a client function or class for {{ENDPOINT}} in {{LANGUAGE}}
+2. Include proper TypeScript types (if {{LANGUAGE}} supports them) matching the OpenAPI schemas EXACTLY
+3. Handle authentication via Bearer token
+4. Support optional Idempotency-Key header
+5. Handle all documented HTTP response codes for {{ENDPOINT}}
+6. Include proper error handling
+7. Validate input parameters according to the schema
+8. Return the exact response type from the OpenAPI spec
+9. Include a simple usage example of the client function/class
+10. Code must be production-ready and compile without errors
+11. NO server code, NO demo endpoints, NO HTTP handlers
 
-IMPORTANT SCHEMA DETAILS FOR {{ENDPOINT}}:
-- Amount fields must match pattern: ^[0-9]+(\.[0-9]{1,18})?$
-- QuoteRequest requires either from_amount OR to_amount (not both)
-- Responses are wrapped in EventEnvelope with type field (quote.created, payment.created, etc.)
-- Unix timestamps are used for time fields
-- Quote valid_until determines expiration time
-
-RESPONSE FORMAT:
+RESPONSE FORMAT - CLIENT CODE ONLY:
 '''{{LANGUAGE_EXTENSION}}
-// Generated code here following the exact OpenAPI specification for {{ENDPOINT}} only
+// Client code for {{ENDPOINT}} endpoint only
 '''
 
-Generate production-ready code that developers can immediately use to integrate with the {{ENDPOINT}} endpoint of the Tesser FX API.
-`
+Generate ONLY the client library code for integrating with {{ENDPOINT}}. Do not include any server implementation.`
 };
 
 const getOpenAPISpec = () => {
@@ -622,18 +619,40 @@ const generateCode = async (endpoint: string, language: SupportedLanguage, endpo
 
   // Create a minimal spec containing only what's needed for this endpoint
   const relevantSpec = {
-    info: openApiSpec.info,
+    info: {
+      title: openApiSpec.info?.title,
+      version: openApiSpec.info?.version
+    },
     servers: openApiSpec.servers,
-    security: openApiSpec.security,
     paths: {
       [endpoint]: endpointPath
     },
     components: {
-      // Only include schemas that are actually referenced by this endpoint
-      schemas: openApiSpec.components?.schemas,
-      parameters: openApiSpec.components?.parameters,
-      responses: openApiSpec.components?.responses,
-      securitySchemes: openApiSpec.components?.securitySchemes
+      // Only include the essential schemas for this endpoint
+      schemas: {
+        // Include only the core schemas needed for the endpoint
+        ...(endpoint === '/quotes' ? {
+          QuoteRequest: openApiSpec.components?.schemas?.QuoteRequest,
+          QuoteData: openApiSpec.components?.schemas?.QuoteData,
+          EventEnvelope: openApiSpec.components?.schemas?.EventEnvelope,
+          Error: openApiSpec.components?.schemas?.Error,
+          Amount: openApiSpec.components?.schemas?.Amount,
+          UnixTime: openApiSpec.components?.schemas?.UnixTime
+        } : {}),
+        ...(endpoint === '/payments' ? {
+          PaymentRequest: openApiSpec.components?.schemas?.PaymentRequest,
+          PaymentData: openApiSpec.components?.schemas?.PaymentData,
+          EventEnvelope: openApiSpec.components?.schemas?.EventEnvelope,
+          Error: openApiSpec.components?.schemas?.Error,
+          UnixTime: openApiSpec.components?.schemas?.UnixTime
+        } : {})
+      },
+      securitySchemes: {
+        BearerAuth: openApiSpec.components?.securitySchemes?.BearerAuth
+      },
+      parameters: {
+        IdempotencyKey: openApiSpec.components?.parameters?.IdempotencyKey
+      }
     }
   };
 
