@@ -9,4 +9,4 @@
 - Copied OpenAPI spec and prompt directly into `packages/mcp/server.ts` because was having filepath issues when reading from separate files.
 - Only tested with Typescript, but MCP server is capable of generating code in other languages.
 - If you use the MCP server from Cursor, your prompt my influence the generated code. In order to get a pure response from the MCP server, follow the instructions in `packages/mcp/README.md` to invoke MCP directly.
-- MCP from Cursor was working fine until I restarted my computer which forced a Cursor update. The new version is having trouble detecting MCP tools. 
+- Flaky MCP SSE connections when deployed to Vercel. 
