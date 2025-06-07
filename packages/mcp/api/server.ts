@@ -1,8 +1,6 @@
 import { createMcpHandler } from "@vercel/mcp-adapter";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
-import { readFileSync } from "fs";
-import { join } from "path";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -22,19 +20,6 @@ type SupportedLanguage = keyof typeof LANGUAGE_CONFIG;
 
 // Load the prompt template and OpenAPI spec
 const getPromptTemplate = () => {
-  // try {
-  //   const templatePath = join(__dirname, "prompt.txt");
-  //   console.log(`Attempting to load prompt template from: ${templatePath}`);
-  //   const content = readFileSync(templatePath, "utf-8");
-  //   console.log(`Prompt template loaded successfully. Length: ${content.length} chars`);
-  //   console.log(`First 200 chars of prompt: ${content.substring(0, 200)}...`);
-  //   return content;
-  // } catch (error) {
-  //   console.error("Failed to load prompt template:", error);
-  //   const fallback = "Generate code for the {{ENDPOINT}} endpoint in {{LANGUAGE}}.";
-  //   console.log(`Using fallback prompt: ${fallback}`);
-  //   return fallback;
-  // }
   return `You are an expert software engineer generating a CLIENT LIBRARY for the {{ENDPOINT}} endpoint of the Tesser FX API.
 
 CRITICAL INSTRUCTIONS:
@@ -80,21 +65,6 @@ Generate ONLY the client library code for integrating with {{ENDPOINT}}. Do not 
 };
 
 const getOpenAPISpec = () => {
-  // try {
-  //   const specPath = join(__dirname, "openapi.json");
-  //   console.log(`Attempting to load OpenAPI spec from: ${specPath}`);
-  //   const specContent = readFileSync(specPath, "utf-8");
-  //   console.log(`OpenAPI spec loaded successfully. Length: ${specContent.length} chars`);
-  //   const parsed = JSON.parse(specContent);
-  //   console.log(`OpenAPI spec title: ${parsed.info?.title}`);
-  //   console.log(`Available paths: ${Object.keys(parsed.paths || {}).join(', ')}`);
-  //   return parsed;
-  // } catch (error) {
-  //   console.error("Failed to load OpenAPI spec:", error);
-  //   const fallback = {};
-  //   console.log(`Using empty fallback spec`);
-  //   return fallback;
-  // }
   return {
     "openapi": "3.1.0",
     "info": {
@@ -272,9 +242,6 @@ const getOpenAPISpec = () => {
             },
             "to_amount": {
               "$ref": "#/components/schemas/Amount"
-            },
-            "quote_time": {
-              "$ref": "#/components/schemas/UnixTime"
             },
             "rules": {
               "type": "array",
@@ -725,7 +692,7 @@ KEY REQUIREMENTS FROM OPENAPI SPEC:
 - POST to /quotes
 - Required: to_currency field
 - Either from_amount OR to_amount is required (mutually exclusive)
-- Optional fields: client_quote_id, from_currency, quote_time, rules, compliance
+- Optional fields: client_quote_id, from_currency, rules, compliance
 - Returns EventEnvelope with type "quote.created" and QuoteData in data field
 - Quote includes: id, valid_until (unix timestamp), quotes array with rates
 - Amount format must match: ^[0-9]+(\.[0-9]{1,18})?$
@@ -857,5 +824,5 @@ ${generatedCode}
     }
   );
 });
-
 export { handler as GET, handler as POST, handler as DELETE };
+
